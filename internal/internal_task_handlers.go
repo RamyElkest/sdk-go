@@ -215,7 +215,7 @@ type (
 	}
 
 	finishedTask struct {
-		isFailed       bool
+		isCompleted    bool
 		binaryChecksum string
 		flags          []sdkFlag
 		sdkVersion     string
@@ -267,9 +267,9 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
-// isNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
+// isNextWorkflowTaskCompleted checks if the workflow task completed or failed. If it did complete returns some information
 // on the completed workflow task.
-func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
+func (eh *history) isNextWorkflowTaskCompleted() (task finishedTask, err error) {
 	nextIndex := eh.currentIndex + 1
 	// Server can return an empty page so if we need the next event we must keep checking until we either get it
 	// or know we have no more pages to check
@@ -283,10 +283,10 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 	if nextIndex < len(eh.loadedEvents) {
 		nextEvent := eh.loadedEvents[nextIndex]
 		nextEventType := nextEvent.GetEventType()
-		isFailed := nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT || nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED
+		isCompleted := nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED
 		var binaryChecksum string
 		var flags []sdkFlag
-		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+		if isCompleted {
 			completedAttrs := nextEvent.GetWorkflowTaskCompletedEventAttributes()
 			binaryChecksum = completedAttrs.BinaryChecksum
 			for _, flag := range completedAttrs.GetSdkMetadata().GetLangUsedFlags() {
@@ -301,7 +301,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 			}
 		}
 		return finishedTask{
-			isFailed:       isFailed,
+			isCompleted:    isCompleted,
 			binaryChecksum: binaryChecksum,
 			flags:          flags,
 			sdkName:        nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetSdkName(),
@@ -469,12 +469,12 @@ OrderEvents:
 
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
-			finishedTask, err1 := eh.isNextWorkflowTaskFailed()
+			finishedTask, err1 := eh.isNextWorkflowTaskCompleted()
 			if err1 != nil {
 				err := err1
 				return nil, err
 			}
-			if !finishedTask.isFailed {
+			if finishedTask.isCompleted {
 				eh.binaryChecksum = finishedTask.binaryChecksum
 				eh.currentIndex++
 				taskEvents.events = append(taskEvents.events, event)
